@@ -10,7 +10,7 @@
 using namespace std;
 
 // DEBUGGING
-const bool DEBUG = true;
+const bool DEBUG = false;
 
 // TOKENIZER TYPE CONSTANTS
 const string NEW_LINE = "NEW_LINE";
