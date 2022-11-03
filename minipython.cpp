@@ -9,6 +9,9 @@
 
 using namespace std;
 
+// DEBUGGING
+const bool DEBUG = true;
+
 // TOKENIZER TYPE CONSTANTS
 const string NEW_LINE = "NEW_LINE";
 const string INDENT = "INDENT";
@@ -103,19 +106,22 @@ int main(int argc, char* argv[]) {
     //Interpreter
     interpret(ast);
 
-    for (auto const& x : variables) {
-        cout << x.first << " : ";
-        if (x.second.list.size() > 0) {
-            cout << "[ ";
-            for (int i = 0; i < x.second.list.size(); i++) {
-                cout << x.second.list[i] << " ";
+    if (DEBUG){
+        //PRINT ALL VARIABLES
+        for (auto const& x : variables) {
+            cout << x.first << " : ";
+            if (x.second.list.size() > 0) {
+                cout << "[ ";
+                for (int i = 0; i < x.second.list.size(); i++) {
+                    cout << x.second.list[i] << " ";
+                }
+                cout << "]" << endl;
+            } else {
+                cout << x.second.integer << endl;
             }
-            cout << "]" << endl;
-        } else {
-            cout << x.second.integer << endl;
         }
     }
-
+    
     return 0;
 }
 
@@ -329,13 +335,15 @@ vector<token> lexer(string input) {
         currIndex ++;
     }
     
-    //Print tokens
-    cout << "TOKENS: " << tokens.size() << " tokens found" << endl;
-    for (int i = 0; i < tokens.size(); i++) {
-        if (tokens[i].type == NEW_LINE){
-            cout << tokens[i].type << " " << "\\n" << " " << tokens[i].startPosition << endl;
-        } else {
-            cout << tokens[i].type << " " << tokens[i].value << " " << tokens[i].startPosition << endl;
+    if (DEBUG){
+        //Print tokens
+        cout << "TOKENS: " << tokens.size() << " tokens found" << endl;
+        for (int i = 0; i < tokens.size(); i++) {
+            if (tokens[i].type == NEW_LINE){
+                cout << tokens[i].type << " " << "\\n" << " " << tokens[i].startPosition << endl;
+            } else {
+                cout << tokens[i].type << " " << tokens[i].value << " " << tokens[i].startPosition << endl;
+            }
         }
     }
 
@@ -379,28 +387,38 @@ ASTNode parseTree(vector<token> tokens) {
         }
     }
 
-    printASTTree(root, 0);
-
+    if (DEBUG) {
+        printASTTree(root, 0);
+    }
     return root; 
 }
 
 ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) {
-    cout << "Analyzing token: " << lookahead.type << " at index " << currToken << endl;
+    if(DEBUG){
+        cout << "Analyzing token: " << lookahead.type << " at index " << currToken << endl;
+    }
+    
     if (lookahead.type == NEW_LINE) {
-        cout<<"END OF LINE"<<endl;
+        if(DEBUG){
+            cout<<"END OF LINE"<<endl;
+        }
         ASTNode emptyNode = ASTNode();
         emptyNode.type = "LINE_END";
         return emptyNode;
     }
     
     if (lookahead.type == IDENTIFIER) {
-        cout<<"IDENTIFIER"<<endl;
+        if(DEBUG){
+            cout<<"IDENTIFIER"<<endl;
+        }
         ASTNode assigment = ASTNode();
         assigment.symbol = lookahead.value;
         currToken ++;
         lookahead = tokens[currToken];
         if(lookahead.type == EQUALS) {
-            cout << "IDENTIFIER then EQUALS" << endl;
+            if(DEBUG){
+                cout << "IDENTIFIER then EQUALS" << endl;
+            }
             assigment.type = AST_ASSIGMENT;
             currToken ++;
             lookahead = tokens[currToken];
@@ -408,7 +426,9 @@ ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) 
             assigment.expression.push_back(expression);
             return assigment;
         } else if (lookahead.type == IS_EQUAL) {
-            cout << "IDENTIFIER then IS_EQUAL" << endl;
+            if(DEBUG){
+                cout << "IDENTIFIER then IS_EQUAL" << endl;
+            }
             assigment.type = IDENTIFIER;
             ASTNode operation = ASTNode();
             operation.type = AST_OPERATION;
@@ -419,11 +439,15 @@ ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) 
             operation.parameters.push_back(parseExpression(tokens, currToken, lookahead));
             return operation;
         } else if (lookahead.type == NEW_LINE) {
-            cout<<"IDENTIFIER then NEW_LINE"<<endl;
+            if(DEBUG){
+                cout << "IDENTIFIER then NEW_LINE" << endl;
+            }
             assigment.type = AST_IDENTIFIER;
             return assigment;
         } else if (lookahead.type == PLUS) {
-            cout<<"IDENTIFIER then PLUS"<<endl;
+            if(DEBUG){
+                cout << "IDENTIFIER then PLUS" << endl;
+            }
             currToken++;
             lookahead = tokens[currToken];
             assigment.type = IDENTIFIER;
@@ -434,24 +458,29 @@ ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) 
             expression.parameters.push_back(parseExpression(tokens, currToken, lookahead));
             return expression;
         } else if (lookahead.type == CLOSE_PARENTHESES) {
-            cout << "IDENTIFIER then CLOSE_PARENTHESES" << endl;
+            if(DEBUG){
+                cout << "IDENTIFIER then CLOSE_PARENTHESES" << endl;
+            }
             assigment.type = AST_IDENTIFIER;
             return assigment;
         } else if (lookahead.type == OPEN_BRACKET) {
-            cout << "IDENTIFIER then OPEN_BRACKET" << endl;
+            if(DEBUG){
+                cout << "IDENTIFIER then OPEN_BRACKET" << endl;
+            }
             ASTNode listIndex = ASTNode();
             listIndex.type = AST_LIST_INDEX;
             listIndex.symbol = assigment.symbol;
             while (lookahead.type != CLOSE_BRACKET) {
                 currToken ++;
                 lookahead = tokens[currToken];
-                cout << "Close bracket while loop" << endl;
                 listIndex.parameters.push_back(parseExpression(tokens, currToken, lookahead));
             }
             currToken ++;
             lookahead = tokens[currToken];
             if(lookahead.type == EQUALS) {
-                cout << "IDENTIFIER then OPEN_BRACKET then EQUALS" << endl;
+                if(DEBUG){
+                    cout << "IDENTIFIER then OPEN_BRACKET then EQUALS" << endl;
+                }
                 currToken ++;
                 lookahead = tokens[currToken];
                 assigment.type = AST_ASSIGMENT;
@@ -464,14 +493,18 @@ ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) 
     }
     
     if (lookahead.type == NUMBER) {
-        cout<<"NUMBER"<<endl;
+        if(DEBUG){
+            cout<<"NUMBER"<<endl;
+        }
         ASTNode number = ASTNode();
         number.type = AST_NUMBER;
         number.value = lookahead.value;
         currToken ++;
         lookahead = tokens[currToken];
         if(lookahead.type == PLUS) {
-            cout << "NUMBER then PLUS" << endl;
+            if(DEBUG){
+                cout << "NUMBER then PLUS" << endl;
+            }
             currToken ++;
             lookahead = tokens[currToken];
             ASTNode operation = ASTNode();
@@ -485,7 +518,9 @@ ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) 
     }
 
     if (lookahead.type == STRING) {
-        cout<<"STRING"<<endl;
+        if(DEBUG){
+            cout<<"STRING"<<endl;
+        }
         ASTNode string = ASTNode();
         string.type = AST_STRING;
         string.value = lookahead.value;
@@ -495,7 +530,9 @@ ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) 
     }
 
     if (lookahead.type == IF) {
-        cout<<"IF STATEMENT"<<endl;
+        if(DEBUG){
+            cout<<"IF"<<endl;
+        }
         ASTNode ifStatement = ASTNode();
         ifStatement.type = AST_FUNCTION_CALL;
         ifStatement.symbol = lookahead.value;
@@ -587,7 +624,9 @@ ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) 
     }
 
     if (lookahead.type == PRINT) {
-        cout<<"PRINT"<<endl;
+        if(DEBUG){
+            cout<<"PRINT"<<endl;
+        }
         ASTNode print = ASTNode();
         print.type = AST_FUNCTION_CALL;
         print.symbol = lookahead.value;
@@ -599,7 +638,9 @@ ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) 
     }
 
     if (lookahead.type == OPEN_PARENTHESES) {
-        cout<<"OPEN_PAREN"<<endl;
+        if(DEBUG){
+            cout<<"OPEN_PARENTHESES"<<endl;
+        }
         ASTNode expression = ASTNode();
         expression.type = AST_EXPRESSION;
         while (lookahead.type != CLOSE_PARENTHESES) {        
@@ -611,7 +652,9 @@ ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) 
     }
 
     if (lookahead.type == OPEN_BRACKET) {
-        cout<<"OPEN_BRACKET"<<endl;
+        if(DEBUG){
+            cout<<"OPEN_BRACKET"<<endl;
+        }
         ASTNode list = ASTNode();
         list.type = AST_LIST;
         while (lookahead.type != CLOSE_BRACKET) {
@@ -665,7 +708,9 @@ void interpret(ASTNode node) {
 }
 
 Symbol traverse(ASTNode node) {
-    cout << "Traversing node: " << node.type << endl;
+    if (DEBUG) {
+        cout << "Traversing node of type " << node.type << endl;
+    }
     if (node.type == AST_ASSIGMENT) {
         Symbol symbol = Symbol();
         string symbolName = node.symbol;
