@@ -10,7 +10,7 @@
 using namespace std;
 
 // DEBUGGING
-const bool DEBUG = true;
+const bool DEBUG = false;
 
 // TOKENIZER TYPE CONSTANTS
 const string NEW_LINE = "NEW_LINE";
@@ -504,7 +504,6 @@ ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) 
             while (lookahead.type != CLOSE_BRACKET) {
                 currToken ++;
                 lookahead = tokens[currToken];
-                cout << "LOOKAHEAD: " << lookahead.type << endl;
                 listIndex.parameters.push_back(parseExpression(tokens, currToken, lookahead));
             }
             currToken ++;
@@ -910,7 +909,6 @@ Symbol traverse(ASTNode node) {
                     cout << toPrint.str << " ";
                 }
             }
-            cout << endl;
             return symbol;
         }
 
