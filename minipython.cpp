@@ -10,7 +10,7 @@
 using namespace std;
 
 // DEBUGGING
-const bool DEBUG = false;
+const bool DEBUG = true;
 
 // TOKENIZER TYPE CONSTANTS
 const string NEW_LINE = "NEW_LINE";
@@ -40,6 +40,8 @@ const string COMMENT = "COMMENT";
 const string IF = "IF";
 const string ELSE = "ELSE";
 const string IS_EQUAL = "IS_EQUAL";
+const string FUNCTION_DEFINITION = "FUNCTION_DEFINITION";
+const string RETURN = "RETURN";
 
 //Each Token represents a word, a symbol or a number
 struct token {
@@ -60,6 +62,9 @@ const string AST_IDENTIFIER = "IDENTIFIER";
 const string AST_FUNCTION_CALL = "FUNCTION_CALL";
 const string AST_EXPRESSION = "EXPRESSION";
 const string AST_BODY = "BODY";
+const string AST_FUNCTION = "FUNCTION";
+const string AST_PARAMETER = "PARAMETER";
+const string AST_RETURN = "RETURN";
 
 class ASTNode {
     public:
@@ -79,6 +84,7 @@ class Symbol{
         string string;
         bool boolean;
         vector<int> list;
+        ASTNode function;
 };
 
 unordered_map<string, Symbol> variables;
@@ -325,7 +331,11 @@ vector<token> lexer(string input) {
                 tokens.push_back(makeOneSymbolToken(IF, identifier, tokenStartPos));
             } else if (identifier == "else") {
                 tokens.push_back(makeOneSymbolToken(ELSE, identifier, tokenStartPos));
-            } else {
+            } else if (identifier == "def") {
+                tokens.push_back(makeOneSymbolToken(FUNCTION_DEFINITION, identifier, tokenStartPos)); 
+            } else if (identifier == "return") {
+                tokens.push_back(makeOneSymbolToken(RETURN, identifier, tokenStartPos)); 
+            }else {
                 tokens.push_back(makeOneSymbolToken(IDENTIFIER, identifier, tokenStartPos));
             }
             continue;
@@ -425,7 +435,21 @@ ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) 
             ASTNode expression = parseExpression(tokens, currToken, lookahead);
             assigment.expression.push_back(expression);
             return assigment;
-        } else if (lookahead.type == IS_EQUAL) {
+        } else if(lookahead.type == OPEN_PARENTHESES) {
+            if (DEBUG) {
+                cout << "IDENTIFIER then OPEN_PARENTHESES" << endl;
+            }
+            ASTNode functionCall = ASTNode();
+            functionCall.type = AST_FUNCTION_CALL;
+            functionCall.symbol = assigment.symbol;
+            while (lookahead.type != CLOSE_PARENTHESES) {
+                currToken ++;
+                lookahead = tokens[currToken];
+                ASTNode expression = parseExpression(tokens, currToken, lookahead);
+                functionCall.parameters.push_back(expression);
+            }
+            return functionCall;
+        }if (lookahead.type == IS_EQUAL) {
             if(DEBUG){
                 cout << "IDENTIFIER then IS_EQUAL" << endl;
             }
@@ -463,6 +487,13 @@ ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) 
             }
             assigment.type = AST_IDENTIFIER;
             return assigment;
+        } else if (lookahead.type == CLOSE_BRACKET) {
+            if(DEBUG){
+                cout << "IDENTIFIER then CLOSE_BRACKET" << endl;
+            }
+            assigment.type = AST_IDENTIFIER;
+            return assigment;
+
         } else if (lookahead.type == OPEN_BRACKET) {
             if(DEBUG){
                 cout << "IDENTIFIER then OPEN_BRACKET" << endl;
@@ -473,6 +504,7 @@ ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) 
             while (lookahead.type != CLOSE_BRACKET) {
                 currToken ++;
                 lookahead = tokens[currToken];
+                cout << "LOOKAHEAD: " << lookahead.type << endl;
                 listIndex.parameters.push_back(parseExpression(tokens, currToken, lookahead));
             }
             currToken ++;
@@ -488,8 +520,73 @@ ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) 
                 assigment.expression.push_back(listIndex);
                 return assigment;
             }
+            if (lookahead.type == PLUS){
+                if(DEBUG){
+                    cout << "IDENTIFIER then OPEN_BRACKET then PLUS" << endl;
+                }
+                currToken ++;
+                lookahead = tokens[currToken];
+                ASTNode expression = ASTNode();
+                expression.type = AST_OPERATION;
+                expression.value = "+";
+                expression.parameters.push_back(listIndex);
+                expression.parameters.push_back(parseExpression(tokens, currToken, lookahead));
+                return expression;
+            }
+            
             return listIndex;
         }
+    }
+
+    if (lookahead.type == FUNCTION_DEFINITION) {
+        if(DEBUG){
+            cout<<"FUNCTION_DEFINITION"<<endl;
+        }
+        ASTNode function = ASTNode();
+        function.type = AST_FUNCTION;
+        currToken ++;
+        lookahead = tokens[currToken];
+        function.symbol = lookahead.value;
+        currToken ++;
+        lookahead = tokens[currToken];
+        while (lookahead.type != COLON) {
+            if (lookahead.type == IDENTIFIER) {
+                ASTNode parameter = ASTNode();
+                parameter.type = AST_PARAMETER;
+                parameter.symbol = lookahead.value;
+                function.parameters.push_back(parameter);
+            }
+            currToken ++;
+            lookahead = tokens[currToken];
+        }
+        currToken ++;
+        lookahead = tokens[currToken];
+        if (lookahead.type == NEW_LINE) {
+            currToken ++;
+            lookahead = tokens[currToken];
+        }
+        while (lookahead.type == INDENT) {
+            currToken ++;
+            lookahead = tokens[currToken];
+            function.children.push_back(parseExpression(tokens, currToken, lookahead));
+            if(lookahead.type == NEW_LINE) {
+                currToken ++;
+                lookahead = tokens[currToken];
+            }
+        }
+        return function;
+    }
+
+    if (lookahead.type == RETURN) {
+        if(DEBUG){
+            cout<<"RETURN"<<endl;
+        }
+        ASTNode returnNode = ASTNode();
+        returnNode.type = AST_RETURN;
+        currToken ++;
+        lookahead = tokens[currToken];
+        returnNode.expression.push_back(parseExpression(tokens, currToken, lookahead));
+        return returnNode;
     }
     
     if (lookahead.type == NUMBER) {
@@ -721,6 +818,14 @@ Symbol traverse(ASTNode node) {
         symbol = traverse(node.expression[0]);
         variables[symbolName] = symbol;
     }
+
+    if (node.type == AST_FUNCTION) {
+        Symbol function = Symbol();
+        string functionName = node.symbol;
+        function.function = node;
+        function.type = "function";
+        variables[functionName] = function;
+    }
     
     if (node.type == AST_NUMBER) {
         Symbol symbol = Symbol();
@@ -825,8 +930,40 @@ Symbol traverse(ASTNode node) {
                     }
                 }
             }
+            return Symbol();
         }
 
+        if (variables.find(node.symbol) != variables.end()) {
+            if (DEBUG){
+            //PRINT ALL VARIABLES
+                for (auto const& x : variables) {
+                    cout << x.first << " : ";
+                    if (x.second.list.size() > 0) {
+                        cout << "[ ";
+                        for (int i = 0; i < x.second.list.size(); i++) {
+                            cout << x.second.list[i] << " ";
+                        }
+                        cout << "]" << endl;
+                    } else {
+                        cout << x.second.integer << endl;
+                    }
+                }
+            }
+            ASTNode function = variables[node.symbol].function;
+            for (int i = 0; i < function.parameters.size(); i++) {
+                string parameterName = function.parameters[i].symbol;
+                Symbol parameterValue = traverse(node.parameters[i]);
+                variables[parameterName] = parameterValue;
+            }
+            
+            for (int i = 0; i < function.children.size(); i++) {
+                if (function.children[i].type == AST_RETURN) {
+                    return traverse(function.children[i]);
+                }
+                traverse(function.children[i]);
+            }
+            return Symbol();
+        }
     }
 
     if (node.type == AST_EXPRESSION) {
@@ -863,6 +1000,11 @@ Symbol traverse(ASTNode node) {
             exit(1);
         }
     }
+
+    if (node.type == AST_RETURN) {
+        return traverse(node.expression[0]);
+    }
+    
 
     return Symbol();
 }

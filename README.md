@@ -10,6 +10,7 @@ COSC 4315 - Programming Languages and Paradigms - Homework 2
 <PROGRAM> -> 
     | <ASSIGMENT>* 
     | <FUNCTION_CALL>*
+    | <EXPRESSION>*
 <ASSIGMENT> -> 
     <IDENTIFIER> <EQUALS> <EXPRESSION>
 <EXPRESSION> ->     
