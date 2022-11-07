@@ -81,7 +81,7 @@ class Symbol{
     public:
         string type;
         int integer;
-        string string;
+        string str;
         bool boolean;
         vector<int> list;
         ASTNode function;
@@ -837,7 +837,7 @@ Symbol traverse(ASTNode node) {
     if (node.type == AST_STRING) {
         Symbol symbol = Symbol();
         symbol.type = "STRING";
-        symbol.string = node.value;
+        symbol.str = node.value;
         return symbol;
     }
 
@@ -907,7 +907,7 @@ Symbol traverse(ASTNode node) {
                     cout << "]" << endl;
                 }
                 if (toPrint.type == AST_STRING) {
-                    cout << toPrint.string << " ";
+                    cout << toPrint.str << " ";
                 }
             }
             cout << endl;
