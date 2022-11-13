@@ -6,11 +6,12 @@
 #include <sstream>
 #include <algorithm>
 #include <unordered_map>
+#include <filesystem>
 
 using namespace std;
 
 // DEBUGGING
-const bool DEBUG = false;
+const bool DEBUG = true;
 
 // TOKENIZER TYPE CONSTANTS
 const string NEW_LINE = "NEW_LINE";
@@ -25,7 +26,10 @@ const string MINUS = "MINUS";
 const string MULTIPLY = "MULTIPLY";
 const string DIVIDE = "DIVIDE";
 const string GREATER_THAN = "GREATER_THAN";
+const string GREATER_EQUAL = "GREATER_EQUAL";
 const string LESS_THAN = "LESS_THAN";
+const string LESS_EQUAL = "LESS_EQUAL";
+const string NOT_EQUAL = "NOT_EQUAL";
 const string OPEN_PARENTHESES = "OPEN_PARENTHESES";
 const string CLOSE_PARENTHESES = "CLOSE_PARENTHESES";
 const string OPEN_BRACKET = "OPEN_BRACKET";
@@ -33,6 +37,9 @@ const string CLOSE_BRACKET = "CLOSE_BRACKET";
 const string OPEN_BRACE = "OPEN_BRACE";
 const string CLOSE_BRACE = "CLOSE_BRACE";
 const string NUMBER = "NUMBER";
+const string TRUE = "TRUE";
+const string FALSE = "FALSE";
+const string NULL_IDENTIFIER = "NULL";
 const string IDENTIFIER = "IDENTIFIER";
 const string STRING = "STRING";
 const string PRINT = "PRINT";
@@ -42,12 +49,15 @@ const string ELSE = "ELSE";
 const string IS_EQUAL = "IS_EQUAL";
 const string FUNCTION_DEFINITION = "FUNCTION_DEFINITION";
 const string RETURN = "RETURN";
+const string BLOCK_START = "BLOCK_START";
+const string BLOCK_END = "BLOCK_END";
 
 //Each Token represents a word, a symbol or a number
 struct token {
     string type;
     string value = "";
-    int startPosition;
+    int line;
+    int position;
 };
 
 //AST Node Types
@@ -92,7 +102,7 @@ unordered_map<string, Symbol> variables;
 //Function Declarations
 string getInput(string input);
 vector<token> lexer(string input);
-token makeOneSymbolToken(string type, string value, int startPosition);
+token makeOneSymbolToken(string type, string value, int line, int position);
 ASTNode parseTree(vector<token> tokens);
 ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead);
 void printASTTree(ASTNode node, int tabs);
@@ -101,32 +111,32 @@ Symbol traverse(ASTNode node);
 
 int main(int argc, char* argv[]) {
     //Obtain input from file string
-    string pythonFile = getInput(argv[1]);
+    string pythonFile = getInput(argv[1]); //argv[1]
     
     //Lexer
     vector<token> tokens = lexer(pythonFile);
 
     //Parser
-    ASTNode ast = parseTree(tokens);
+    // ASTNode ast = parseTree(tokens);
 
-    //Interpreter
-    interpret(ast);
+    // //Interpreter
+    // interpret(ast);
 
-    if (DEBUG){
-        //PRINT ALL VARIABLES
-        for (auto const& x : variables) {
-            cout << x.first << " : ";
-            if (x.second.list.size() > 0) {
-                cout << "[ ";
-                for (int i = 0; i < x.second.list.size(); i++) {
-                    cout << x.second.list[i] << " ";
-                }
-                cout << "]" << endl;
-            } else {
-                cout << x.second.integer << endl;
-            }
-        }
-    }
+    // if (DEBUG){
+    //     //PRINT ALL VARIABLES
+    //     for (auto const& x : variables) {
+    //         cout << x.first << " : ";
+    //         if (x.second.list.size() > 0) {
+    //             cout << "[ ";
+    //             for (int i = 0; i < x.second.list.size(); i++) {
+    //                 cout << x.second.list[i] << " ";
+    //             }
+    //             cout << "]" << endl;
+    //         } else {
+    //             cout << x.second.integer << endl;
+    //         }
+    //     }
+    // }
     
     return 0;
 }
@@ -144,139 +154,213 @@ string getInput(string input) {
 
 //LEXER (TOKENIZER)
 vector<token> lexer(string input) {
-    //Generates tokens for every symbol, identifier, keyword or number
     vector<token> tokens;
+    int line = 1;
+    int position = 1;
     int currIndex = 0;
+    int indentationLevel = 0;
+    bool isIndent = false;
+    int lastIndentationLength = 0;
 
     while (currIndex < input.length()) {
-        int tokenStartPos = currIndex;
         string lookahead = "";
         lookahead += input[currIndex];
 
-        if (lookahead == " ") {
-            for (int i = 0; i < 3; i++) {
-                currIndex++;
-                lookahead = input[currIndex];
-                if (lookahead != " ") {
-                    break;
+        //NEW LINE
+        if (lookahead == "\n") {
+
+            line ++;
+            position = 1;
+            currIndex ++;
+            if(isIndent) {
+                lookahead = "";
+                for (int i=0; i<4*indentationLevel; i++) {
+                    if (input[currIndex+i] == ' ') {
+                        lookahead += input[currIndex+i];
+                    }else{
+                        break;
+                    }
                 }
-                if (i == 2) {
-                    tokens.push_back(makeOneSymbolToken(INDENT, "    ", tokenStartPos));
-                    currIndex ++;
-                }
+                cout << "Line: " << line << " >" << lookahead << "< lookahead length: " << lookahead.length() << ". Level: " << indentationLevel << endl;
                 
+                if (lookahead.length()%(4*indentationLevel) == 0 && lookahead.length() != 0) {
+                    currIndex += lookahead.length();
+                    position += lookahead.length();
+                    continue;
+                } else if (lookahead.length() == 0) {
+                    for (int i = 0; i < indentationLevel; i++) {
+                        tokens.push_back(makeOneSymbolToken(BLOCK_END, "BLOCK_END", line, position));
+                    }
+                    isIndent = false;
+                    indentationLevel = 0;
+                } else {
+                    indentationLevel --;
+                    if(indentationLevel == 0){
+                        isIndent = false;
+                    }
+                    tokens.push_back(makeOneSymbolToken(BLOCK_END, "BLOCK_END", line, position));
+                }
+                currIndex += lookahead.length();
+                position += lookahead.length();
             }
             continue;
         }
 
+        //COMMENT
+        if(lookahead == "#") {
+            position ++;
+            currIndex ++;
+            lookahead = input[currIndex];
+            while (lookahead != "\n") {
+                position ++;
+                currIndex ++;
+                lookahead = input[currIndex];
+            }
+            continue;
+        }
+
+        //SPACE
+        if (lookahead == " ") {
+            position ++;
+            currIndex ++;
+            continue;
+            
+        }
+
+        //SEMICOLON
         if (lookahead == ";") {
+            //ignore space
+            position ++;
             currIndex ++;
             continue;
         }
 
-        if (lookahead == "\n") {
-            tokens.push_back(makeOneSymbolToken(NEW_LINE, lookahead, tokenStartPos));
+        //COMMA
+        if(lookahead == ",") {
+            tokens.push_back(makeOneSymbolToken(COMMA, lookahead, line, position));
+            position ++;
             currIndex ++;
             continue;
         }
 
+        //COLON 
+        if(lookahead == ":") {
+            tokens.push_back(makeOneSymbolToken(COLON, lookahead, line, position));
+            position ++;
+            currIndex ++;
+            continue;
+        }
+
+        //EQUALS, and IS EQUAL operators
         if (lookahead == "=") {
             currIndex ++;
             lookahead = input[currIndex];
             if (lookahead == "=") {
-                tokens.push_back(makeOneSymbolToken(IS_EQUAL, "==", tokenStartPos));
+                tokens.push_back(makeOneSymbolToken(IS_EQUAL, "==", line, position));
+                position += 2;
                 currIndex ++;
                 continue;
             } else {
-                tokens.push_back(makeOneSymbolToken(EQUALS, "=", tokenStartPos));
+                tokens.push_back(makeOneSymbolToken(EQUALS, "=", line, position));
+                position ++;
                 continue;
             }
         }
 
-        if (lookahead == ":") {
-            tokens.push_back(makeOneSymbolToken(COLON, lookahead, tokenStartPos));
-            currIndex ++;
-            continue;
-        }
-
-        if (lookahead == ",") {
-            tokens.push_back(makeOneSymbolToken(COMMA, lookahead, tokenStartPos));
-            currIndex ++;
-            continue;
-        }
-
-        if (lookahead == "+") {
-            tokens.push_back(makeOneSymbolToken(PLUS, lookahead, tokenStartPos));
-            currIndex ++;
-            continue;
-        }
-
-        if (lookahead == "-") {
-            tokens.push_back(makeOneSymbolToken(MINUS, lookahead, tokenStartPos));
-            currIndex ++;
-            continue;
-        }
-
-        if (lookahead == "*") {
-            tokens.push_back(makeOneSymbolToken(MULTIPLY, lookahead, tokenStartPos));
-            currIndex ++;
-            continue;
-        }
-
-        if (lookahead == "/") {
-            tokens.push_back(makeOneSymbolToken(DIVIDE, lookahead, tokenStartPos));
-            currIndex ++;
-            continue;
-        }
-
+        //GREATER and GREATER THAN operators
         if (lookahead == ">") {
-            tokens.push_back(makeOneSymbolToken(GREATER_THAN, lookahead, tokenStartPos));
             currIndex ++;
-            continue;
+            lookahead = input[currIndex];
+            if (lookahead == "=") {
+                tokens.push_back(makeOneSymbolToken(GREATER_EQUAL, ">=", line, position));
+                position += 2;
+                currIndex ++;
+                continue;
+            } else {
+                tokens.push_back(makeOneSymbolToken(GREATER_THAN, ">", line, position));
+                position ++;
+                continue;
+            }
         }
 
+        //LESS and LESS THAN operators
         if (lookahead == "<") {
-            tokens.push_back(makeOneSymbolToken(LESS_THAN, lookahead, tokenStartPos));
+            currIndex ++;
+            lookahead = input[currIndex];
+            if (lookahead == "=") {
+                tokens.push_back(makeOneSymbolToken(LESS_EQUAL, ">=", line, position));
+                position += 2;
+                currIndex ++;
+                continue;
+            } else {
+                tokens.push_back(makeOneSymbolToken(GREATER_THAN, ">", line, position));
+                position ++;
+                continue;
+            }
+        }
+
+        //NOT_EQUAL operator
+        if (lookahead == "!") {
+            currIndex ++;
+            lookahead = input[currIndex];
+            if (lookahead == "=") {
+                tokens.push_back(makeOneSymbolToken(NOT_EQUAL, "!=", line, position));
+                position += 2;
+                currIndex ++;
+                continue;
+            } else {
+                cout << "ERROR: Invalid symbol " << lookahead << " at line " << line << " position " << position << endl;
+                exit(1);
+            }
+        }
+
+        //PLUS
+        if (lookahead == "+") {
+            tokens.push_back(makeOneSymbolToken(PLUS, "+", line, position));
+            position ++;
             currIndex ++;
             continue;
         }
 
+        //MINUS
+        if (lookahead == "-") {
+            tokens.push_back(makeOneSymbolToken(MINUS, "-", line, position));
+            position ++;
+            currIndex ++;
+            continue;
+        }
+
+        //PARENTHESIS
         if (lookahead == "(") {
-            tokens.push_back(makeOneSymbolToken(OPEN_PARENTHESES, lookahead, tokenStartPos));
+            tokens.push_back(makeOneSymbolToken(OPEN_PARENTHESES, "(", line, position));
+            position ++;
             currIndex ++;
             continue;
         }
 
         if (lookahead == ")") {
-            tokens.push_back(makeOneSymbolToken(CLOSE_PARENTHESES, lookahead, tokenStartPos));
+            tokens.push_back(makeOneSymbolToken(CLOSE_PARENTHESES, ")", line, position));
+            position ++;
             currIndex ++;
             continue;
         }
 
+        //BRACKETS
         if (lookahead == "[") {
-            tokens.push_back(makeOneSymbolToken(OPEN_BRACKET, lookahead, tokenStartPos));
+            tokens.push_back(makeOneSymbolToken(OPEN_BRACKET, "[", line, position));
+            position ++;
             currIndex ++;
             continue;
         }
 
         if (lookahead == "]") {
-            tokens.push_back(makeOneSymbolToken(CLOSE_BRACKET, lookahead, tokenStartPos));
+            tokens.push_back(makeOneSymbolToken(CLOSE_BRACKET, "]", line, position));
+            position ++;
             currIndex ++;
             continue;
         }
 
-        if (lookahead == "{") {
-            tokens.push_back(makeOneSymbolToken(OPEN_BRACE, lookahead, tokenStartPos));
-            currIndex ++;
-            continue;
-        }
-
-        if (lookahead == "}") {
-            tokens.push_back(makeOneSymbolToken(CLOSE_BRACE, lookahead, tokenStartPos));
-            currIndex ++;
-            continue;
-        }
-
+        //STRING
         if (lookahead == "\"") {
             string str = "";
             currIndex ++;
@@ -286,39 +370,25 @@ vector<token> lexer(string input) {
                 currIndex ++;
                 lookahead = input[currIndex];
             }
-            token t;
-            t.type = STRING;
-            t.value = str;
-            t.startPosition = tokenStartPos;
-            tokens.push_back(t);
+            tokens.push_back(makeOneSymbolToken(STRING, str, line, position));
+            position += str.length() + 2;
             currIndex ++;
             continue;
         }
 
-        if(lookahead == "#") {
-            currIndex ++;
-            lookahead = input[currIndex];
-            while (lookahead != "\n") {
-                currIndex ++;
-                lookahead = input[currIndex];
-            }
-            continue;
-        }
-
+        //INTEGER
         if (isdigit(lookahead[0])) {
             string number = "";
             while (isdigit(input[currIndex]) && currIndex < input.length()) {
                 number += input[currIndex];
                 currIndex ++;
             }
-            token t;
-            t.type = NUMBER;
-            t.value = number;
-            t.startPosition = tokenStartPos;
-            tokens.push_back(t);
+            tokens.push_back(makeOneSymbolToken(NUMBER, number, line, position));
+            position += number.length();
             continue;
         }
 
+        //IDENTIFIER
         if (isalpha(lookahead[0])) {
             string identifier = "";
             while ((isalpha(input[currIndex]) || isdigit(input[currIndex]) || input[currIndex] == '_') && currIndex < input.length()) {
@@ -326,683 +396,698 @@ vector<token> lexer(string input) {
                 currIndex ++;
             }
             if (identifier == "print") {
-                tokens.push_back(makeOneSymbolToken(PRINT, identifier, tokenStartPos));
+                tokens.push_back(makeOneSymbolToken(PRINT, "print", line, position));
             } else if (identifier == "if") {
-                tokens.push_back(makeOneSymbolToken(IF, identifier, tokenStartPos));
+                isIndent = true;
+                indentationLevel ++;
+                tokens.push_back(makeOneSymbolToken(IF, "if", line, position));
             } else if (identifier == "else") {
-                tokens.push_back(makeOneSymbolToken(ELSE, identifier, tokenStartPos));
+                isIndent = true;
+                indentationLevel ++;
+                tokens.push_back(makeOneSymbolToken(ELSE, "else", line, position));
             } else if (identifier == "def") {
-                tokens.push_back(makeOneSymbolToken(FUNCTION_DEFINITION, identifier, tokenStartPos)); 
+                indentationLevel ++;
+                isIndent = true;
+                tokens.push_back(makeOneSymbolToken(FUNCTION_DEFINITION, "def", line, position));
             } else if (identifier == "return") {
-                tokens.push_back(makeOneSymbolToken(RETURN, identifier, tokenStartPos)); 
-            }else {
-                tokens.push_back(makeOneSymbolToken(IDENTIFIER, identifier, tokenStartPos));
+                tokens.push_back(makeOneSymbolToken(RETURN, "return", line, position));
+            } else if (identifier == "true") {
+                tokens.push_back(makeOneSymbolToken(TRUE, "true", line, position));
+            } else if (identifier == "false") {
+                tokens.push_back(makeOneSymbolToken(FALSE, "false", line, position));
+            } else if (identifier == "null") {
+                tokens.push_back(makeOneSymbolToken(NULL_IDENTIFIER, "null", line, position));
+            } else {
+                tokens.push_back(makeOneSymbolToken(IDENTIFIER, identifier, line, position));
             }
+            position += identifier.length();
             continue;
         }
 
-        cout << "Error: Invalid character -> " << lookahead << " <- " << endl;
-        currIndex ++;
+        //ERROR
+        cout << "Error: Invalid character -> " << lookahead << " <- " << "at line " << line << " position " << position << endl;
+        exit(1);
     }
-    
+
     if (DEBUG){
         //Print tokens
-        cout << "TOKENS: " << tokens.size() << " tokens found" << endl;
+        cout << "TOKENS: " << tokens.size() << " tokens found." << endl;
+        cout << "----------------------------------------------------------------------------" << endl;
+        cout << "Type               \t\tValue              \t\tLine\t\tPosition" << endl;
         for (int i = 0; i < tokens.size(); i++) {
-            if (tokens[i].type == NEW_LINE){
-                cout << tokens[i].type << " " << "\\n" << " " << tokens[i].startPosition << endl;
-            } else {
-                cout << tokens[i].type << " " << tokens[i].value << " " << tokens[i].startPosition << endl;
-            }
+            string type = tokens[i].type + string(19-tokens[i].type.length(), ' ');
+            string value = tokens[i].value + string(19-tokens[i].value.length(), ' ');
+            cout << type << "\t\t" << value << "\t\t" << tokens[i].line << "\t\t" << tokens[i].position << endl;
         }
     }
 
     return tokens;
 }
 
-token makeOneSymbolToken(string type, string value, int startPosition) {
+token makeOneSymbolToken(string type, string value, int line, int position) {
     //Helper function to create a token for a single symbol
     token t;
     t.type = type;
-    t.startPosition = startPosition;
     t.value = value;
+    t.line = line;
+    t.position = position;
     return t;
 }
 
 //TREE PARSING
-ASTNode parseTree(vector<token> tokens) {
-    ASTNode root = ASTNode();
-    root.type = "PROGRAM";
+// ASTNode parseTree(vector<token> tokens) {
+//     ASTNode root = ASTNode();
+//     root.type = "PROGRAM";
 
-    int currToken = 0;
-    token lookahead = tokens[currToken];
+//     int currToken = 0;
+//     token lookahead = tokens[currToken];
 
-    while (currToken < tokens.size()) {
-        if (lookahead.type == NEW_LINE) {
-            if (currToken + 1 < tokens.size()) {
-                currToken ++;
-                lookahead = tokens[currToken];
-            } else {
-                break;
-            }
-        } else {
-            ASTNode statement = parseExpression(tokens, currToken, lookahead);
-            root.children.push_back(statement);
-            if (currToken + 1 < tokens.size()) {
-                currToken ++;
-                lookahead = tokens[currToken];
-            } else {
-                break;
-            }
-        }
-    }
+//     while (currToken < tokens.size()) {
+//         if (lookahead.type == NEW_LINE) {
+//             if (currToken + 1 < tokens.size()) {
+//                 currToken ++;
+//                 lookahead = tokens[currToken];
+//             } else {
+//                 break;
+//             }
+//         } else {
+//             ASTNode statement = parseExpression(tokens, currToken, lookahead);
+//             root.children.push_back(statement);
+//             if (currToken + 1 < tokens.size()) {
+//                 currToken ++;
+//                 lookahead = tokens[currToken];
+//             } else {
+//                 break;
+//             }
+//         }
+//     }
 
-    if (DEBUG) {
-        printASTTree(root, 0);
-    }
-    return root; 
-}
+//     if (DEBUG) {
+//         printASTTree(root, 0);
+//     }
+//     return root; 
+// }
 
-ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) {
-    if(DEBUG){
-        cout << "Analyzing token: " << lookahead.type << " at index " << currToken << endl;
-    }
+// ASTNode parseExpression(vector<token> tokens, int &currToken, token &lookahead) {
+//     if(DEBUG){
+//         cout << "Analyzing token: " << lookahead.type << " at index " << currToken << endl;
+//     }
     
-    if (lookahead.type == NEW_LINE) {
-        if(DEBUG){
-            cout<<"END OF LINE"<<endl;
-        }
-        ASTNode emptyNode = ASTNode();
-        emptyNode.type = "LINE_END";
-        return emptyNode;
-    }
+//     if (lookahead.type == NEW_LINE) {
+//         if(DEBUG){
+//             cout<<"END OF LINE"<<endl;
+//         }
+//         ASTNode emptyNode = ASTNode();
+//         emptyNode.type = "LINE_END";
+//         return emptyNode;
+//     }
     
-    if (lookahead.type == IDENTIFIER) {
-        if(DEBUG){
-            cout<<"IDENTIFIER"<<endl;
-        }
-        ASTNode assigment = ASTNode();
-        assigment.symbol = lookahead.value;
-        currToken ++;
-        lookahead = tokens[currToken];
-        if(lookahead.type == EQUALS) {
-            if(DEBUG){
-                cout << "IDENTIFIER then EQUALS" << endl;
-            }
-            assigment.type = AST_ASSIGMENT;
-            currToken ++;
-            lookahead = tokens[currToken];
-            ASTNode expression = parseExpression(tokens, currToken, lookahead);
-            assigment.expression.push_back(expression);
-            return assigment;
-        } else if(lookahead.type == OPEN_PARENTHESES) {
-            if (DEBUG) {
-                cout << "IDENTIFIER then OPEN_PARENTHESES" << endl;
-            }
-            ASTNode functionCall = ASTNode();
-            functionCall.type = AST_FUNCTION_CALL;
-            functionCall.symbol = assigment.symbol;
-            while (lookahead.type != CLOSE_PARENTHESES) {
-                currToken ++;
-                lookahead = tokens[currToken];
-                ASTNode expression = parseExpression(tokens, currToken, lookahead);
-                functionCall.parameters.push_back(expression);
-            }
-            return functionCall;
-        }if (lookahead.type == IS_EQUAL) {
-            if(DEBUG){
-                cout << "IDENTIFIER then IS_EQUAL" << endl;
-            }
-            assigment.type = IDENTIFIER;
-            ASTNode operation = ASTNode();
-            operation.type = AST_OPERATION;
-            operation.value = "==";
-            operation.parameters.push_back(assigment);
-            currToken ++;
-            lookahead = tokens[currToken];
-            operation.parameters.push_back(parseExpression(tokens, currToken, lookahead));
-            return operation;
-        } else if (lookahead.type == NEW_LINE) {
-            if(DEBUG){
-                cout << "IDENTIFIER then NEW_LINE" << endl;
-            }
-            assigment.type = AST_IDENTIFIER;
-            return assigment;
-        } else if (lookahead.type == PLUS) {
-            if(DEBUG){
-                cout << "IDENTIFIER then PLUS" << endl;
-            }
-            currToken++;
-            lookahead = tokens[currToken];
-            assigment.type = IDENTIFIER;
-            ASTNode expression = ASTNode();
-            expression.type = AST_OPERATION;
-            expression.value = "+";
-            expression.parameters.push_back(assigment);
-            expression.parameters.push_back(parseExpression(tokens, currToken, lookahead));
-            return expression;
-        } else if (lookahead.type == CLOSE_PARENTHESES) {
-            if(DEBUG){
-                cout << "IDENTIFIER then CLOSE_PARENTHESES" << endl;
-            }
-            assigment.type = AST_IDENTIFIER;
-            return assigment;
-        } else if (lookahead.type == CLOSE_BRACKET) {
-            if(DEBUG){
-                cout << "IDENTIFIER then CLOSE_BRACKET" << endl;
-            }
-            assigment.type = AST_IDENTIFIER;
-            return assigment;
+//     if (lookahead.type == IDENTIFIER) {
+//         if(DEBUG){
+//             cout<<"IDENTIFIER"<<endl;
+//         }
+//         ASTNode assigment = ASTNode();
+//         assigment.symbol = lookahead.value;
+//         currToken ++;
+//         lookahead = tokens[currToken];
+//         if(lookahead.type == EQUALS) {
+//             if(DEBUG){
+//                 cout << "IDENTIFIER then EQUALS" << endl;
+//             }
+//             assigment.type = AST_ASSIGMENT;
+//             currToken ++;
+//             lookahead = tokens[currToken];
+//             ASTNode expression = parseExpression(tokens, currToken, lookahead);
+//             assigment.expression.push_back(expression);
+//             return assigment;
+//         } else if(lookahead.type == OPEN_PARENTHESES) {
+//             if (DEBUG) {
+//                 cout << "IDENTIFIER then OPEN_PARENTHESES" << endl;
+//             }
+//             ASTNode functionCall = ASTNode();
+//             functionCall.type = AST_FUNCTION_CALL;
+//             functionCall.symbol = assigment.symbol;
+//             while (lookahead.type != CLOSE_PARENTHESES) {
+//                 currToken ++;
+//                 lookahead = tokens[currToken];
+//                 ASTNode expression = parseExpression(tokens, currToken, lookahead);
+//                 functionCall.parameters.push_back(expression);
+//             }
+//             return functionCall;
+//         }if (lookahead.type == IS_EQUAL) {
+//             if(DEBUG){
+//                 cout << "IDENTIFIER then IS_EQUAL" << endl;
+//             }
+//             assigment.type = IDENTIFIER;
+//             ASTNode operation = ASTNode();
+//             operation.type = AST_OPERATION;
+//             operation.value = "==";
+//             operation.parameters.push_back(assigment);
+//             currToken ++;
+//             lookahead = tokens[currToken];
+//             operation.parameters.push_back(parseExpression(tokens, currToken, lookahead));
+//             return operation;
+//         } else if (lookahead.type == NEW_LINE) {
+//             if(DEBUG){
+//                 cout << "IDENTIFIER then NEW_LINE" << endl;
+//             }
+//             assigment.type = AST_IDENTIFIER;
+//             return assigment;
+//         } else if (lookahead.type == PLUS) {
+//             if(DEBUG){
+//                 cout << "IDENTIFIER then PLUS" << endl;
+//             }
+//             currToken++;
+//             lookahead = tokens[currToken];
+//             assigment.type = IDENTIFIER;
+//             ASTNode expression = ASTNode();
+//             expression.type = AST_OPERATION;
+//             expression.value = "+";
+//             expression.parameters.push_back(assigment);
+//             expression.parameters.push_back(parseExpression(tokens, currToken, lookahead));
+//             return expression;
+//         } else if (lookahead.type == CLOSE_PARENTHESES) {
+//             if(DEBUG){
+//                 cout << "IDENTIFIER then CLOSE_PARENTHESES" << endl;
+//             }
+//             assigment.type = AST_IDENTIFIER;
+//             return assigment;
+//         } else if (lookahead.type == CLOSE_BRACKET) {
+//             if(DEBUG){
+//                 cout << "IDENTIFIER then CLOSE_BRACKET" << endl;
+//             }
+//             assigment.type = AST_IDENTIFIER;
+//             return assigment;
 
-        } else if (lookahead.type == OPEN_BRACKET) {
-            if(DEBUG){
-                cout << "IDENTIFIER then OPEN_BRACKET" << endl;
-            }
-            ASTNode listIndex = ASTNode();
-            listIndex.type = AST_LIST_INDEX;
-            listIndex.symbol = assigment.symbol;
-            while (lookahead.type != CLOSE_BRACKET) {
-                currToken ++;
-                lookahead = tokens[currToken];
-                listIndex.parameters.push_back(parseExpression(tokens, currToken, lookahead));
-            }
-            currToken ++;
-            lookahead = tokens[currToken];
-            if(lookahead.type == EQUALS) {
-                if(DEBUG){
-                    cout << "IDENTIFIER then OPEN_BRACKET then EQUALS" << endl;
-                }
-                currToken ++;
-                lookahead = tokens[currToken];
-                assigment.type = AST_ASSIGMENT;
-                listIndex.expression.push_back(parseExpression(tokens, currToken, lookahead));
-                assigment.expression.push_back(listIndex);
-                return assigment;
-            }
-            if (lookahead.type == PLUS){
-                if(DEBUG){
-                    cout << "IDENTIFIER then OPEN_BRACKET then PLUS" << endl;
-                }
-                currToken ++;
-                lookahead = tokens[currToken];
-                ASTNode expression = ASTNode();
-                expression.type = AST_OPERATION;
-                expression.value = "+";
-                expression.parameters.push_back(listIndex);
-                expression.parameters.push_back(parseExpression(tokens, currToken, lookahead));
-                return expression;
-            }
+//         } else if (lookahead.type == OPEN_BRACKET) {
+//             if(DEBUG){
+//                 cout << "IDENTIFIER then OPEN_BRACKET" << endl;
+//             }
+//             ASTNode listIndex = ASTNode();
+//             listIndex.type = AST_LIST_INDEX;
+//             listIndex.symbol = assigment.symbol;
+//             while (lookahead.type != CLOSE_BRACKET) {
+//                 currToken ++;
+//                 lookahead = tokens[currToken];
+//                 listIndex.parameters.push_back(parseExpression(tokens, currToken, lookahead));
+//             }
+//             currToken ++;
+//             lookahead = tokens[currToken];
+//             if(lookahead.type == EQUALS) {
+//                 if(DEBUG){
+//                     cout << "IDENTIFIER then OPEN_BRACKET then EQUALS" << endl;
+//                 }
+//                 currToken ++;
+//                 lookahead = tokens[currToken];
+//                 assigment.type = AST_ASSIGMENT;
+//                 listIndex.expression.push_back(parseExpression(tokens, currToken, lookahead));
+//                 assigment.expression.push_back(listIndex);
+//                 return assigment;
+//             }
+//             if (lookahead.type == PLUS){
+//                 if(DEBUG){
+//                     cout << "IDENTIFIER then OPEN_BRACKET then PLUS" << endl;
+//                 }
+//                 currToken ++;
+//                 lookahead = tokens[currToken];
+//                 ASTNode expression = ASTNode();
+//                 expression.type = AST_OPERATION;
+//                 expression.value = "+";
+//                 expression.parameters.push_back(listIndex);
+//                 expression.parameters.push_back(parseExpression(tokens, currToken, lookahead));
+//                 return expression;
+//             }
             
-            return listIndex;
-        }
-    }
+//             return listIndex;
+//         }
+//     }
 
-    if (lookahead.type == FUNCTION_DEFINITION) {
-        if(DEBUG){
-            cout<<"FUNCTION_DEFINITION"<<endl;
-        }
-        ASTNode function = ASTNode();
-        function.type = AST_FUNCTION;
-        currToken ++;
-        lookahead = tokens[currToken];
-        function.symbol = lookahead.value;
-        currToken ++;
-        lookahead = tokens[currToken];
-        while (lookahead.type != COLON) {
-            if (lookahead.type == IDENTIFIER) {
-                ASTNode parameter = ASTNode();
-                parameter.type = AST_PARAMETER;
-                parameter.symbol = lookahead.value;
-                function.parameters.push_back(parameter);
-            }
-            currToken ++;
-            lookahead = tokens[currToken];
-        }
-        currToken ++;
-        lookahead = tokens[currToken];
-        if (lookahead.type == NEW_LINE) {
-            currToken ++;
-            lookahead = tokens[currToken];
-        }
-        while (lookahead.type == INDENT) {
-            currToken ++;
-            lookahead = tokens[currToken];
-            function.children.push_back(parseExpression(tokens, currToken, lookahead));
-            if(lookahead.type == NEW_LINE) {
-                currToken ++;
-                lookahead = tokens[currToken];
-            }
-        }
-        return function;
-    }
+//     if (lookahead.type == FUNCTION_DEFINITION) {
+//         if(DEBUG){
+//             cout<<"FUNCTION_DEFINITION"<<endl;
+//         }
+//         ASTNode function = ASTNode();
+//         function.type = AST_FUNCTION;
+//         currToken ++;
+//         lookahead = tokens[currToken];
+//         function.symbol = lookahead.value;
+//         currToken ++;
+//         lookahead = tokens[currToken];
+//         while (lookahead.type != COLON) {
+//             if (lookahead.type == IDENTIFIER) {
+//                 ASTNode parameter = ASTNode();
+//                 parameter.type = AST_PARAMETER;
+//                 parameter.symbol = lookahead.value;
+//                 function.parameters.push_back(parameter);
+//             }
+//             currToken ++;
+//             lookahead = tokens[currToken];
+//         }
+//         currToken ++;
+//         lookahead = tokens[currToken];
+//         if (lookahead.type == NEW_LINE) {
+//             currToken ++;
+//             lookahead = tokens[currToken];
+//         }
+//         while (lookahead.type == INDENT) {
+//             currToken ++;
+//             lookahead = tokens[currToken];
+//             function.children.push_back(parseExpression(tokens, currToken, lookahead));
+//             if(lookahead.type == NEW_LINE) {
+//                 currToken ++;
+//                 lookahead = tokens[currToken];
+//             }
+//         }
+//         return function;
+//     }
 
-    if (lookahead.type == RETURN) {
-        if(DEBUG){
-            cout<<"RETURN"<<endl;
-        }
-        ASTNode returnNode = ASTNode();
-        returnNode.type = AST_RETURN;
-        currToken ++;
-        lookahead = tokens[currToken];
-        returnNode.expression.push_back(parseExpression(tokens, currToken, lookahead));
-        return returnNode;
-    }
+//     if (lookahead.type == RETURN) {
+//         if(DEBUG){
+//             cout<<"RETURN"<<endl;
+//         }
+//         ASTNode returnNode = ASTNode();
+//         returnNode.type = AST_RETURN;
+//         currToken ++;
+//         lookahead = tokens[currToken];
+//         returnNode.expression.push_back(parseExpression(tokens, currToken, lookahead));
+//         return returnNode;
+//     }
     
-    if (lookahead.type == NUMBER) {
-        if(DEBUG){
-            cout<<"NUMBER"<<endl;
-        }
-        ASTNode number = ASTNode();
-        number.type = AST_NUMBER;
-        number.value = lookahead.value;
-        currToken ++;
-        lookahead = tokens[currToken];
-        if(lookahead.type == PLUS) {
-            if(DEBUG){
-                cout << "NUMBER then PLUS" << endl;
-            }
-            currToken ++;
-            lookahead = tokens[currToken];
-            ASTNode operation = ASTNode();
-            operation.type = AST_OPERATION;
-            operation.value = "+";
-            operation.parameters.push_back(number);
-            operation.parameters.push_back(parseExpression(tokens, currToken, lookahead));
-            return operation;
-        }
-        return number;
-    }
+//     if (lookahead.type == NUMBER) {
+//         if(DEBUG){
+//             cout<<"NUMBER"<<endl;
+//         }
+//         ASTNode number = ASTNode();
+//         number.type = AST_NUMBER;
+//         number.value = lookahead.value;
+//         currToken ++;
+//         lookahead = tokens[currToken];
+//         if(lookahead.type == PLUS) {
+//             if(DEBUG){
+//                 cout << "NUMBER then PLUS" << endl;
+//             }
+//             currToken ++;
+//             lookahead = tokens[currToken];
+//             ASTNode operation = ASTNode();
+//             operation.type = AST_OPERATION;
+//             operation.value = "+";
+//             operation.parameters.push_back(number);
+//             operation.parameters.push_back(parseExpression(tokens, currToken, lookahead));
+//             return operation;
+//         }
+//         return number;
+//     }
 
-    if (lookahead.type == STRING) {
-        if(DEBUG){
-            cout<<"STRING"<<endl;
-        }
-        ASTNode string = ASTNode();
-        string.type = AST_STRING;
-        string.value = lookahead.value;
-        currToken ++;
-        lookahead = tokens[currToken];
-        return string;
-    }
+//     if (lookahead.type == STRING) {
+//         if(DEBUG){
+//             cout<<"STRING"<<endl;
+//         }
+//         ASTNode string = ASTNode();
+//         string.type = AST_STRING;
+//         string.value = lookahead.value;
+//         currToken ++;
+//         lookahead = tokens[currToken];
+//         return string;
+//     }
 
-    if (lookahead.type == IF) {
-        if(DEBUG){
-            cout<<"IF"<<endl;
-        }
-        ASTNode ifStatement = ASTNode();
-        ifStatement.type = AST_FUNCTION_CALL;
-        ifStatement.symbol = lookahead.value;
-        currToken ++;
-        lookahead = tokens[currToken];
-        ASTNode condition = parseExpression(tokens, currToken, lookahead);
-        ifStatement.parameters.push_back(condition);
-        if (lookahead.type == COLON) {
-            currToken ++;
-            lookahead = tokens[currToken];
-        } else {
-            currToken ++;
-            lookahead = tokens[currToken];
-            if (lookahead.type == COLON) {
-                currToken ++;
-                lookahead = tokens[currToken];
-            } else {
-                cout << "ERROR: Expected colon after if statement" << endl;
-                exit(1);
-            }
-        }
-        ASTNode body = ASTNode();
-        body.type = AST_BODY;
-        body.symbol = "if";
-        while (currToken < tokens.size() && lookahead.type != ELSE) {
-            if (lookahead.type == NEW_LINE) {
-                if (currToken + 1 < tokens.size()) {
-                    currToken ++;
-                    lookahead = tokens[currToken];
-                    if (lookahead.type == INDENT) {
-                        currToken ++;
-                        lookahead = tokens[currToken];
-                        body.children.push_back(parseExpression(tokens, currToken, lookahead));
-                    } else {
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            } else {
-                currToken ++;
-                lookahead = tokens[currToken];
-            }
-        }
-        ASTNode elseBody = ASTNode();
-        if (lookahead.type != ELSE) {
-            currToken --;
-            lookahead = tokens[currToken];
-            ifStatement.expression.push_back(body);
-            return ifStatement;
-        } else {
-            elseBody.type = AST_BODY;
-            elseBody.symbol = lookahead.value;
-            currToken ++;
-            lookahead = tokens[currToken];
-            if (lookahead.type == COLON) {
-                currToken ++;
-                lookahead = tokens[currToken];
-            } else {
-                cout << "ERROR: Expected colon after else statement" << endl;
-                exit(1);
-            }
-        }
-        while (currToken < tokens.size()) {
-            if (lookahead.type == NEW_LINE) {
-                if (currToken + 1 < tokens.size()) {
-                    currToken ++;
-                    lookahead = tokens[currToken];
-                    if (lookahead.type == INDENT) {
-                        currToken ++;
-                        lookahead = tokens[currToken];
-                        elseBody.children.push_back(parseExpression(tokens, currToken, lookahead));
-                    } else {
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            } else {
-                currToken ++;
-                lookahead = tokens[currToken];
-            }
-        }
-        currToken --;
-        lookahead = tokens[currToken];
-        ifStatement.expression.push_back(body);
-        ifStatement.expression.push_back(elseBody);
-        return ifStatement;
-    }
+//     if (lookahead.type == IF) {
+//         if(DEBUG){
+//             cout<<"IF"<<endl;
+//         }
+//         ASTNode ifStatement = ASTNode();
+//         ifStatement.type = AST_FUNCTION_CALL;
+//         ifStatement.symbol = lookahead.value;
+//         currToken ++;
+//         lookahead = tokens[currToken];
+//         ASTNode condition = parseExpression(tokens, currToken, lookahead);
+//         ifStatement.parameters.push_back(condition);
+//         if (lookahead.type == COLON) {
+//             currToken ++;
+//             lookahead = tokens[currToken];
+//         } else {
+//             currToken ++;
+//             lookahead = tokens[currToken];
+//             if (lookahead.type == COLON) {
+//                 currToken ++;
+//                 lookahead = tokens[currToken];
+//             } else {
+//                 cout << "ERROR: Expected colon after if statement" << endl;
+//                 exit(1);
+//             }
+//         }
+//         ASTNode body = ASTNode();
+//         body.type = AST_BODY;
+//         body.symbol = "if";
+//         while (currToken < tokens.size() && lookahead.type != ELSE) {
+//             if (lookahead.type == NEW_LINE) {
+//                 if (currToken + 1 < tokens.size()) {
+//                     currToken ++;
+//                     lookahead = tokens[currToken];
+//                     if (lookahead.type == INDENT) {
+//                         currToken ++;
+//                         lookahead = tokens[currToken];
+//                         body.children.push_back(parseExpression(tokens, currToken, lookahead));
+//                     } else {
+//                         break;
+//                     }
+//                 } else {
+//                     break;
+//                 }
+//             } else {
+//                 currToken ++;
+//                 lookahead = tokens[currToken];
+//             }
+//         }
+//         ASTNode elseBody = ASTNode();
+//         if (lookahead.type != ELSE) {
+//             currToken --;
+//             lookahead = tokens[currToken];
+//             ifStatement.expression.push_back(body);
+//             return ifStatement;
+//         } else {
+//             elseBody.type = AST_BODY;
+//             elseBody.symbol = lookahead.value;
+//             currToken ++;
+//             lookahead = tokens[currToken];
+//             if (lookahead.type == COLON) {
+//                 currToken ++;
+//                 lookahead = tokens[currToken];
+//             } else {
+//                 cout << "ERROR: Expected colon after else statement" << endl;
+//                 exit(1);
+//             }
+//         }
+//         while (currToken < tokens.size()) {
+//             if (lookahead.type == NEW_LINE) {
+//                 if (currToken + 1 < tokens.size()) {
+//                     currToken ++;
+//                     lookahead = tokens[currToken];
+//                     if (lookahead.type == INDENT) {
+//                         currToken ++;
+//                         lookahead = tokens[currToken];
+//                         elseBody.children.push_back(parseExpression(tokens, currToken, lookahead));
+//                     } else {
+//                         break;
+//                     }
+//                 } else {
+//                     break;
+//                 }
+//             } else {
+//                 currToken ++;
+//                 lookahead = tokens[currToken];
+//             }
+//         }
+//         currToken --;
+//         lookahead = tokens[currToken];
+//         ifStatement.expression.push_back(body);
+//         ifStatement.expression.push_back(elseBody);
+//         return ifStatement;
+//     }
 
-    if (lookahead.type == PRINT) {
-        if(DEBUG){
-            cout<<"PRINT"<<endl;
-        }
-        ASTNode print = ASTNode();
-        print.type = AST_FUNCTION_CALL;
-        print.symbol = lookahead.value;
-        currToken ++;
-        lookahead = tokens[currToken];
-        ASTNode expression = parseExpression(tokens, currToken, lookahead);
-        print.expression.push_back(expression);
-        return print;
-    }
+//     if (lookahead.type == PRINT) {
+//         if(DEBUG){
+//             cout<<"PRINT"<<endl;
+//         }
+//         ASTNode print = ASTNode();
+//         print.type = AST_FUNCTION_CALL;
+//         print.symbol = lookahead.value;
+//         currToken ++;
+//         lookahead = tokens[currToken];
+//         ASTNode expression = parseExpression(tokens, currToken, lookahead);
+//         print.expression.push_back(expression);
+//         return print;
+//     }
 
-    if (lookahead.type == OPEN_PARENTHESES) {
-        if(DEBUG){
-            cout<<"OPEN_PARENTHESES"<<endl;
-        }
-        ASTNode expression = ASTNode();
-        expression.type = AST_EXPRESSION;
-        while (lookahead.type != CLOSE_PARENTHESES) {        
-            currToken ++;
-            lookahead = tokens[currToken];
-            expression.expression.push_back(parseExpression(tokens, currToken, lookahead));
-        }
-        return expression;
-    }
+//     if (lookahead.type == OPEN_PARENTHESES) {
+//         if(DEBUG){
+//             cout<<"OPEN_PARENTHESES"<<endl;
+//         }
+//         ASTNode expression = ASTNode();
+//         expression.type = AST_EXPRESSION;
+//         while (lookahead.type != CLOSE_PARENTHESES) {        
+//             currToken ++;
+//             lookahead = tokens[currToken];
+//             expression.expression.push_back(parseExpression(tokens, currToken, lookahead));
+//         }
+//         return expression;
+//     }
 
-    if (lookahead.type == OPEN_BRACKET) {
-        if(DEBUG){
-            cout<<"OPEN_BRACKET"<<endl;
-        }
-        ASTNode list = ASTNode();
-        list.type = AST_LIST;
-        while (lookahead.type != CLOSE_BRACKET) {
-            currToken ++;
-            lookahead = tokens[currToken];
-            if (lookahead.type == COMMA) {
-                continue;
-            }
-            list.expression.push_back(parseExpression(tokens, currToken, lookahead));
-        }
-        currToken ++;
-        lookahead = tokens[currToken];
-        return list;
-    }
+//     if (lookahead.type == OPEN_BRACKET) {
+//         if(DEBUG){
+//             cout<<"OPEN_BRACKET"<<endl;
+//         }
+//         ASTNode list = ASTNode();
+//         list.type = AST_LIST;
+//         while (lookahead.type != CLOSE_BRACKET) {
+//             currToken ++;
+//             lookahead = tokens[currToken];
+//             if (lookahead.type == COMMA) {
+//                 continue;
+//             }
+//             list.expression.push_back(parseExpression(tokens, currToken, lookahead));
+//         }
+//         currToken ++;
+//         lookahead = tokens[currToken];
+//         return list;
+//     }
 
-    cout << "ERROR: TOKEN handler not implemented. Node Type: " << lookahead.type << " at character number " << lookahead.startPosition << endl;
-    return ASTNode();
-}
+//     cout << "ERROR: TOKEN handler not implemented. Node Type: " << lookahead.type << " at character number " << lookahead.position << endl;
+//     return ASTNode();
+// }
 
-void printASTTree(ASTNode node, int tabs) {
-    string tabulations = "";
-    for (int i = 0; i < tabs; i++) {
-        tabulations += "\t";
-    }
-    cout << tabulations <<"Type: " << node.type << "-> Symbol: " << node.symbol << ". -> Value: " << node.value << endl;
-    if (node.children.size() > 0) {
-        cout << tabulations << "Child " << endl;
-        for (int i = 0; i < node.children.size(); i++) {
-            printASTTree(node.children[i], tabs + 1);
-        }
-    }
-    if(node.expression.size() > 0) {
-        cout << tabulations << "Expression " << endl;
-        for (int i = 0; i < node.expression.size(); i++) {
-            printASTTree(node.expression[i], tabs + 1);
-        }
-    } 
-    if (node.parameters.size() > 0) {
-        cout << tabulations << "Parameter " << endl;
-        for (int i = 0; i < node.parameters.size(); i++) {
-            printASTTree(node.parameters[i], tabs + 1);
-        }
-    }
-}
+// void printASTTree(ASTNode node, int tabs) {
+//     string tabulations = "";
+//     for (int i = 0; i < tabs; i++) {
+//         tabulations += "\t";
+//     }
+//     cout << tabulations <<"Type: " << node.type << "-> Symbol: " << node.symbol << ". -> Value: " << node.value << endl;
+//     if (node.children.size() > 0) {
+//         cout << tabulations << "Child " << endl;
+//         for (int i = 0; i < node.children.size(); i++) {
+//             printASTTree(node.children[i], tabs + 1);
+//         }
+//     }
+//     if(node.expression.size() > 0) {
+//         cout << tabulations << "Expression " << endl;
+//         for (int i = 0; i < node.expression.size(); i++) {
+//             printASTTree(node.expression[i], tabs + 1);
+//         }
+//     } 
+//     if (node.parameters.size() > 0) {
+//         cout << tabulations << "Parameter " << endl;
+//         for (int i = 0; i < node.parameters.size(); i++) {
+//             printASTTree(node.parameters[i], tabs + 1);
+//         }
+//     }
+// }
 
-//INTERPRETER
-void interpret(ASTNode node) {
-    for (int i = 0; i < node.children.size(); i++) {
-        traverse(node.children[i]);
-    }
-}
+// //INTERPRETER
+// void interpret(ASTNode node) {
+//     for (int i = 0; i < node.children.size(); i++) {
+//         traverse(node.children[i]);
+//     }
+// }
 
-Symbol traverse(ASTNode node) {
-    if (DEBUG) {
-        cout << "Traversing node of type " << node.type << endl;
-    }
-    if (node.type == AST_ASSIGMENT) {
-        Symbol symbol = Symbol();
-        string symbolName = node.symbol;
-        if (node.expression.size() == 0) {
-            cout << "ERROR: Assigment without expression" << endl;
-            exit(1);
-        }
-        symbol = traverse(node.expression[0]);
-        variables[symbolName] = symbol;
-    }
+// Symbol traverse(ASTNode node) {
+//     if (DEBUG) {
+//         cout << "Traversing node of type " << node.type << endl;
+//     }
+//     if (node.type == AST_ASSIGMENT) {
+//         Symbol symbol = Symbol();
+//         string symbolName = node.symbol;
+//         if (node.expression.size() == 0) {
+//             cout << "ERROR: Assigment without expression" << endl;
+//             exit(1);
+//         }
+//         symbol = traverse(node.expression[0]);
+//         variables[symbolName] = symbol;
+//     }
 
-    if (node.type == AST_FUNCTION) {
-        Symbol function = Symbol();
-        string functionName = node.symbol;
-        function.function = node;
-        function.type = "function";
-        variables[functionName] = function;
-    }
+//     if (node.type == AST_FUNCTION) {
+//         Symbol function = Symbol();
+//         string functionName = node.symbol;
+//         function.function = node;
+//         function.type = "function";
+//         variables[functionName] = function;
+//     }
     
-    if (node.type == AST_NUMBER) {
-        Symbol symbol = Symbol();
-        symbol.type = "NUMBER";
-        symbol.integer = stoi(node.value);
-        return symbol;
-    }
+//     if (node.type == AST_NUMBER) {
+//         Symbol symbol = Symbol();
+//         symbol.type = "NUMBER";
+//         symbol.integer = stoi(node.value);
+//         return symbol;
+//     }
 
-    if (node.type == AST_STRING) {
-        Symbol symbol = Symbol();
-        symbol.type = "STRING";
-        symbol.str = node.value;
-        return symbol;
-    }
+//     if (node.type == AST_STRING) {
+//         Symbol symbol = Symbol();
+//         symbol.type = "STRING";
+//         symbol.str = node.value;
+//         return symbol;
+//     }
 
-    if (node.type == AST_OPERATION) {
-        if(node.value == "+") {
-            Symbol part1 = traverse(node.parameters[0]);
-            Symbol part2 = traverse(node.parameters[1]);
-            if (part1.type == AST_LIST && part2.type == AST_LIST) {
-                Symbol symbol = Symbol();
-                symbol.type = AST_LIST;
-                vector<int> newList;
-                for (int i = 0; i < part1.list.size(); i++) {
-                    newList.push_back(part1.list[i]);
-                }
-                for (int i = 0; i < part2.list.size(); i++) {
-                    newList.push_back(part2.list[i]);
-                }
-                symbol.list = newList;
-                return symbol;
-            }
+//     if (node.type == AST_OPERATION) {
+//         if(node.value == "+") {
+//             Symbol part1 = traverse(node.parameters[0]);
+//             Symbol part2 = traverse(node.parameters[1]);
+//             if (part1.type == AST_LIST && part2.type == AST_LIST) {
+//                 Symbol symbol = Symbol();
+//                 symbol.type = AST_LIST;
+//                 vector<int> newList;
+//                 for (int i = 0; i < part1.list.size(); i++) {
+//                     newList.push_back(part1.list[i]);
+//                 }
+//                 for (int i = 0; i < part2.list.size(); i++) {
+//                     newList.push_back(part2.list[i]);
+//                 }
+//                 symbol.list = newList;
+//                 return symbol;
+//             }
             
-            Symbol result = Symbol();
-            result.type = "NUMBER";
-            result.integer = part1.integer + part2.integer;
-            return result;
-        }
+//             Symbol result = Symbol();
+//             result.type = "NUMBER";
+//             result.integer = part1.integer + part2.integer;
+//             return result;
+//         }
 
-        if(node.value == "==") {
-            Symbol part1 = traverse(node.parameters[0]);
-            Symbol part2 = traverse(node.parameters[1]);
-            Symbol result = Symbol();
-            result.type = "BOOLEAN";
-            result.boolean = part1.integer == part2.integer;
-            return result;
-        }
-    }
+//         if(node.value == "==") {
+//             Symbol part1 = traverse(node.parameters[0]);
+//             Symbol part2 = traverse(node.parameters[1]);
+//             Symbol result = Symbol();
+//             result.type = "BOOLEAN";
+//             result.boolean = part1.integer == part2.integer;
+//             return result;
+//         }
+//     }
 
-    if (node.type == AST_IDENTIFIER) {
-        if(variables.find(node.symbol) != variables.end()) {
-            return variables[node.symbol];
-        } else {
-            cout << "ERROR: Variable " << node.symbol << " not found" << endl;
-            exit(1);
-        }
-    }
+//     if (node.type == AST_IDENTIFIER) {
+//         if(variables.find(node.symbol) != variables.end()) {
+//             return variables[node.symbol];
+//         } else {
+//             cout << "ERROR: Variable " << node.symbol << " not found" << endl;
+//             exit(1);
+//         }
+//     }
 
-    if (node.type == AST_FUNCTION_CALL) {
-        if (node.symbol == "print") {
-            if (node.expression.size() == 0) {
-                cout << "ERROR: Print without expression" << endl;
-                exit(1);
-            }
-            Symbol symbol;
-            for (int i = 0; i < node.expression[0].expression.size(); i++){
-                Symbol toPrint = traverse(node.expression[0].expression[i]); 
-                if (toPrint.type == AST_NUMBER) {
-                    cout << toPrint.integer << endl;
-                }
-                if (toPrint.type == AST_LIST) {
-                    cout << "[";
-                    for (int i = 0; i < toPrint.list.size(); i++) {
-                        cout << toPrint.list[i];
-                        if (i != toPrint.list.size() - 1) {
-                            cout << ", ";
-                        }
-                    }
-                    cout << "]" << endl;
-                }
-                if (toPrint.type == AST_STRING) {
-                    cout << toPrint.str << " ";
-                }
-            }
-            return symbol;
-        }
+//     if (node.type == AST_FUNCTION_CALL) {
+//         if (node.symbol == "print") {
+//             if (node.expression.size() == 0) {
+//                 cout << "ERROR: Print without expression" << endl;
+//                 exit(1);
+//             }
+//             Symbol symbol;
+//             for (int i = 0; i < node.expression[0].expression.size(); i++){
+//                 Symbol toPrint = traverse(node.expression[0].expression[i]); 
+//                 if (toPrint.type == AST_NUMBER) {
+//                     cout << toPrint.integer << endl;
+//                 }
+//                 if (toPrint.type == AST_LIST) {
+//                     cout << "[";
+//                     for (int i = 0; i < toPrint.list.size(); i++) {
+//                         cout << toPrint.list[i];
+//                         if (i != toPrint.list.size() - 1) {
+//                             cout << ", ";
+//                         }
+//                     }
+//                     cout << "]" << endl;
+//                 }
+//                 if (toPrint.type == AST_STRING) {
+//                     cout << toPrint.str << " ";
+//                 }
+//             }
+//             return symbol;
+//         }
 
-        if (node.symbol == "if") {
-            if (node.expression.size() == 0) {
-                return Symbol();
-            }
-            Symbol condition = traverse(node.parameters[0]);
-            if (condition.boolean) {
-                for (int i = 0; i < node.expression[0].children.size(); i++) {
-                    traverse(node.expression[0].children[i]);
-                }
-            } else {
-                if(node.expression.size() > 1) {
-                    for (int i = 0; i < node.expression[1].children.size(); i++) {
-                        traverse(node.expression[1].children[i]);
-                    }
-                }
-            }
-            return Symbol();
-        }
+//         if (node.symbol == "if") {
+//             if (node.expression.size() == 0) {
+//                 return Symbol();
+//             }
+//             Symbol condition = traverse(node.parameters[0]);
+//             if (condition.boolean) {
+//                 for (int i = 0; i < node.expression[0].children.size(); i++) {
+//                     traverse(node.expression[0].children[i]);
+//                 }
+//             } else {
+//                 if(node.expression.size() > 1) {
+//                     for (int i = 0; i < node.expression[1].children.size(); i++) {
+//                         traverse(node.expression[1].children[i]);
+//                     }
+//                 }
+//             }
+//             return Symbol();
+//         }
 
-        if (variables.find(node.symbol) != variables.end()) {
-            if (DEBUG){
-            //PRINT ALL VARIABLES
-                for (auto const& x : variables) {
-                    cout << x.first << " : ";
-                    if (x.second.list.size() > 0) {
-                        cout << "[ ";
-                        for (int i = 0; i < x.second.list.size(); i++) {
-                            cout << x.second.list[i] << " ";
-                        }
-                        cout << "]" << endl;
-                    } else {
-                        cout << x.second.integer << endl;
-                    }
-                }
-            }
-            ASTNode function = variables[node.symbol].function;
-            for (int i = 0; i < function.parameters.size(); i++) {
-                string parameterName = function.parameters[i].symbol;
-                Symbol parameterValue = traverse(node.parameters[i]);
-                variables[parameterName] = parameterValue;
-            }
+//         if (variables.find(node.symbol) != variables.end()) {
+//             if (DEBUG){
+//             //PRINT ALL VARIABLES
+//                 for (auto const& x : variables) {
+//                     cout << x.first << " : ";
+//                     if (x.second.list.size() > 0) {
+//                         cout << "[ ";
+//                         for (int i = 0; i < x.second.list.size(); i++) {
+//                             cout << x.second.list[i] << " ";
+//                         }
+//                         cout << "]" << endl;
+//                     } else {
+//                         cout << x.second.integer << endl;
+//                     }
+//                 }
+//             }
+//             ASTNode function = variables[node.symbol].function;
+//             for (int i = 0; i < function.parameters.size(); i++) {
+//                 string parameterName = function.parameters[i].symbol;
+//                 Symbol parameterValue = traverse(node.parameters[i]);
+//                 variables[parameterName] = parameterValue;
+//             }
             
-            for (int i = 0; i < function.children.size(); i++) {
-                if (function.children[i].type == AST_RETURN) {
-                    return traverse(function.children[i]);
-                }
-                traverse(function.children[i]);
-            }
-            return Symbol();
-        }
-    }
+//             for (int i = 0; i < function.children.size(); i++) {
+//                 if (function.children[i].type == AST_RETURN) {
+//                     return traverse(function.children[i]);
+//                 }
+//                 traverse(function.children[i]);
+//             }
+//             return Symbol();
+//         }
+//     }
 
-    if (node.type == AST_EXPRESSION) {
-        return traverse(node.expression[0]);
-    }
+//     if (node.type == AST_EXPRESSION) {
+//         return traverse(node.expression[0]);
+//     }
 
-    if (node.type == AST_LIST) {
-        Symbol symbol = Symbol();
-        symbol.type = "LIST";
-        vector<int> list;
-        for (int i = 0; i < node.expression.size(); i++) {
-            list.push_back(traverse(node.expression[i]).integer);
-        }
-        symbol.list = list;
-        return symbol;
-    }
+//     if (node.type == AST_LIST) {
+//         Symbol symbol = Symbol();
+//         symbol.type = "LIST";
+//         vector<int> list;
+//         for (int i = 0; i < node.expression.size(); i++) {
+//             list.push_back(traverse(node.expression[i]).integer);
+//         }
+//         symbol.list = list;
+//         return symbol;
+//     }
 
-    if (node.type == AST_LIST_INDEX) {
-        if(variables.find(node.symbol) != variables.end()) {
-            Symbol symbol = variables[node.symbol];
-            if (node.expression.size() > 0) {
-                Symbol expression = traverse(node.expression[0]);
-                Symbol parameter = traverse(node.parameters[0]);
-                symbol.list[parameter.integer] = expression.integer;
-                return symbol;
-            } else {
-                Symbol result = Symbol();
-                result.type = "NUMBER";
-                result.integer = symbol.list[traverse(node.parameters[0]).integer];
-                return result;
-            }
-        } else {
-            cout << "ERROR: Variable " << node.symbol << " not found" << endl;
-            exit(1);
-        }
-    }
+//     if (node.type == AST_LIST_INDEX) {
+//         if(variables.find(node.symbol) != variables.end()) {
+//             Symbol symbol = variables[node.symbol];
+//             if (node.expression.size() > 0) {
+//                 Symbol expression = traverse(node.expression[0]);
+//                 Symbol parameter = traverse(node.parameters[0]);
+//                 symbol.list[parameter.integer] = expression.integer;
+//                 return symbol;
+//             } else {
+//                 Symbol result = Symbol();
+//                 result.type = "NUMBER";
+//                 result.integer = symbol.list[traverse(node.parameters[0]).integer];
+//                 return result;
+//             }
+//         } else {
+//             cout << "ERROR: Variable " << node.symbol << " not found" << endl;
+//             exit(1);
+//         }
+//     }
 
-    if (node.type == AST_RETURN) {
-        return traverse(node.expression[0]);
-    }
+//     if (node.type == AST_RETURN) {
+//         return traverse(node.expression[0]);
+//     }
     
 
-    return Symbol();
-}
+//     return Symbol();
+// }
