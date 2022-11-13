@@ -112,7 +112,7 @@ Symbol traverse(ASTNode node);
 int main(int argc, char* argv[]) {
     //Obtain input from file string
     string pythonFile = getInput(argv[1]); //argv[1]
-    
+    // string pythonFile = "def IncrementIterator(itr):\n    if itr == None:\n        return None\n\n    itr = itr + 1\n    return itr\nprint(3)";
     //Lexer
     vector<token> tokens = lexer(pythonFile);
 
@@ -181,11 +181,11 @@ vector<token> lexer(string input) {
                         break;
                     }
                 }
-                cout << "Line: " << line << " >" << lookahead << "< lookahead length: " << lookahead.length() << ". Level: " << indentationLevel << endl;
-                
                 if (lookahead.length()%(4*indentationLevel) == 0 && lookahead.length() != 0) {
                     currIndex += lookahead.length();
                     position += lookahead.length();
+                    continue;
+                } else if (input[currIndex] == '\n') {
                     continue;
                 } else if (lookahead.length() == 0) {
                     for (int i = 0; i < indentationLevel; i++) {
@@ -415,7 +415,7 @@ vector<token> lexer(string input) {
                 tokens.push_back(makeOneSymbolToken(TRUE, "true", line, position));
             } else if (identifier == "false") {
                 tokens.push_back(makeOneSymbolToken(FALSE, "false", line, position));
-            } else if (identifier == "null") {
+            } else if (identifier == "None") {
                 tokens.push_back(makeOneSymbolToken(NULL_IDENTIFIER, "null", line, position));
             } else {
                 tokens.push_back(makeOneSymbolToken(IDENTIFIER, identifier, line, position));
