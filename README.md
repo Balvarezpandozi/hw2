@@ -3,7 +3,7 @@ COSC 4315 - Programming Languages and Paradigms - Homework 2
 
 ## Instructions:
 - To compile the file, use the following command:
-            >>  g++ minipython.cpp -o topword  <<
+            >>  g++ minipython.cpp -o minipython  <<
 ## Specifications:
 - The program uses three components (three passes on the input): A lexer that captures all symbols in the program, a parser that creates an abstract context tree and an interpreter that traverses and executes the code. Variables are stored in a map so that access time is O(1).
 ### Grammar:
